@@ -1,26 +1,21 @@
-###############################################################
-#  Configuration file for Bochs
-###############################################################
-
-# how much memory the emulated machine will have
+# RAM size
 megs: 32
-
-# filename of ROM images
+# Change to your Bochs installation path
 romimage: file=/usr/local/share/bochs/BIOS-bochs-latest
-vgaromimage: file=/usr/local/share/bochs/VGABIOS-lgpl-latest 
- 
-# what disk images will be used
-floppya: 1_44=my.img, status=inserted
+vgaromimage: file=/usr/local/share/bochs/VGABIOS-lgpl-latest
 
-# choose the boot disk.
-boot: floppy
+# Disk
+boot: disk
+ata0: enabled=1, ioaddr1=0x01f0, ioaddr2=0x03f0, irq=14
+ata0-master: type=disk, path="myos.img", mode=flat, cylinders=6, heads=16, spt=63
 
-# where do we send log messages?
 log: bochsout.txt
 
-# disable the mouse
 mouse: enabled=0
-
 # enable key mapping, using US layout as default.
 keyboard:keymap=/usr/local/share/bochs/keymaps/x11-pc-us.map
+clock: sync=realtime
+cpu: ips=1000000
+
+
 
