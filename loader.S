@@ -1,6 +1,6 @@
 %include "./boot.inc"
 
-SECTION loader vstart=LOADER_BASE_ADDR
+SECTION loader vstart=LOADER_BASE_ADDR;段开始地址
 
 loader_entry:
   jmp loader_start
@@ -12,11 +12,14 @@ cursor_col: dd 0
 setup_protection_mode_message:
   db "setup protection mode ... "
 
+;用符号名定义后面的表达式
 setup_protection_mode_message_length equ $ - setup_protection_mode_message
 
+;定义一个字节单元
 setup_page_message:
   db "setup page ... "
   db 0
+;字符串以0结尾
 
 init_kernel_message:
   db "init kernel ... "
@@ -30,6 +33,8 @@ panic_message:
 GDT_BASE:
   dd 0x00000000
   dd 0x00000000
+;描述符表最开始的16字节全为0
+
 
 CODE_DESC:
   dd DESC_CODE_LOW_32
@@ -46,8 +51,8 @@ VIDEO_DESC:
 ; reserve 60 gdt entries space
 times 60 dq 0
 
-GDT_SIZE    equ   $ - GDT_BASE
-GDT_LIMIT   equ   GDT_SIZE - 1
+GDT_SIZE    equ   $ - GDT_BASE ;运行到当前地址的偏移
+GDT_LIMIT   equ   GDT_SIZE - 1 
 
 gdt_ptr:
   dw GDT_LIMIT
@@ -64,17 +69,17 @@ loader_start:
 
 
 clear_screen:
-  mov byte ah, 0x06
-  mov byte al, 0x00
-  mov byte bh, 0x07
+  mov byte ah, 0x06 ;初始化屏幕向上滚屏
+  mov byte al, 0x00 ;上卷行数
+  mov byte bh, 0x07 ;卷入行属性
   ; start (0, 0)
-  mov byte cl, 0x00
-  mov byte ch, 0x00
+  mov byte cl, 0x00 ;左上角列号
+  mov byte ch, 0x00 ;左上角行号
   ; end: (dl, dh) = (x:79, y:24)
-  mov byte dl, 0x4f
-  mov byte dh, 0x18
+  mov byte dl, 0x4f ;右下角列号
+  mov byte dh, 0x18 ;右下角行号
 
-  int 0x10
+  int 0x10 ;10中断
   ret
 
 ; args:
@@ -82,22 +87,22 @@ clear_screen:
 ;  - cx length
 ;  - dx position
 print_message_real_mode:
-  mov bp, ax
-  mov ah, 0x13  ; int num
-  mov al, 0x01
+  mov bp, ax ;压入栈的字符串
+  mov ah, 0x13  ; 显示字符串
+  mov al, 0x01 ;光标跟随移动
   mov bh, 0x00  ; page number
-  mov bl, 0x07
+  mov bl, 0x07 ;属性
   int 0x10
   ret
 
 setup_protection_mode:
-  mov ax, setup_protection_mode_message
-  mov dx, 0x00
-  mov cx, setup_protection_mode_message_length
+  mov ax, setup_protection_mode_message ;ax等于字符串
+  mov dx, 0x00 ;dx等于0
+  mov cx, setup_protection_mode_message_length ;长度
   call print_message_real_mode
 
   ; enable A20
-  in al, 0x92
+  in al, 0x92 
   or al, 0000_0010b
   out 0x92, al
 
@@ -276,44 +281,44 @@ move_cursor:
 ;****************************** setup paging **********************************;
 setup_page:
   ; clear the memory space for page directory
-  push PAGE_SIZE
-  push PAGE_DIR_PHYISCAL_ADDR
-  call clear_memory
-  add esp, 8
+  push PAGE_SIZE ;;页大小4kb esp加12
+  push PAGE_DIR_PHYISCAL_ADDR ;;自定义页目录实际物理地址是1M加4kb,即1 0000 0000 0000 0000 0000加 01 00 00 00 00 00 00 即0x101000这一页是页目录实际物理地址 esp加8
+  call clear_memory ;;清理自定义页目录的内存
+  add esp, 8 ;;esp加8回到push 页大小之前
 
-  ; create page directory
+  ; create page directory创造内核页目录
 .create_pde:
-  ; first pde
-  mov eax, PAGE_DIR_PHYISCAL_ADDR - PAGE_SIZE
-  or eax, PG_US_U | PG_RW_W | PG_P
-  mov [PAGE_DIR_PHYISCAL_ADDR + 0], eax
-  mov [PAGE_DIR_PHYISCAL_ADDR + 768 * 4], eax
+  ; first pde物理内存中保存的内核页表的第一个页表也就是起始的1MB，只用了四分之一
+  mov eax, PAGE_DIR_PHYISCAL_ADDR - PAGE_SIZE;起始位置为页目录起始物理地址减去页大小
+  or eax, PG_US_U | PG_RW_W | PG_P ;加上属性
+  mov [PAGE_DIR_PHYISCAL_ADDR + 0], eax;将第一个页表地址放入页目录第一行
+  mov [PAGE_DIR_PHYISCAL_ADDR + 768 * 4], eax ;将第一个页表地址放入页目录768页，即都指向第一个页1MB
 
   ; the second pde - we use this 4MB virtual space for all kernel page tales :)
   mov eax, PAGE_DIR_PHYISCAL_ADDR
-  or eax, PG_US_U | PG_RW_W | PG_P
-  mov [PAGE_DIR_PHYISCAL_ADDR + 769 * 4], eax
+  or eax, PG_US_U | PG_RW_W | PG_P ;
+  mov [PAGE_DIR_PHYISCAL_ADDR + 769 * 4], eax ;内核页表第二个页表是页目录，页目录第769列指向本身
 
   ; other kernel pde
-  mov eax, PAGE_DIR_PHYISCAL_ADDR + PAGE_SIZE
+  mov eax, PAGE_DIR_PHYISCAL_ADDR + PAGE_SIZE ;内核第三个页表
   or eax, PG_US_U | PG_RW_W | PG_P
-  mov ecx, 254
-  mov edx, PAGE_DIR_PHYISCAL_ADDR + 770 * 4
+  mov ecx, 254 ;;还剩254个页需要创建,循环计数器
+  mov edx, PAGE_DIR_PHYISCAL_ADDR + 770 * 4 ;内核第三那个页表保存在页目录770项
 .create_kernel_pde:
-  mov [edx], eax
-  add eax, PAGE_SIZE
-  add edx, 4
-  loop .create_kernel_pde
+  mov [edx], eax;;内核页表物理地址保存在页目录相应项中
+  add eax, PAGE_SIZE ;;内核页表位置指向下一个页表
+  add edx, 4 ;;edx指向页目录下一项
+  loop .create_kernel_pde;;直到到达ecx
 
-  ; create the first page table, for 1MB low memory
-  mov eax, 0
+  ; create the first page table, for 1MB low memory第一个页表的前四分之一指向内存起始1MB
+  mov eax, 0 ;指向的位置为0
   or eax, PG_US_U | PG_RW_W | PG_P
-  mov ecx, 256
-  mov edx, PAGE_DIR_PHYISCAL_ADDR - PAGE_SIZE
+  mov ecx, 256;;创造256个页表项即1024除以4
+  mov edx, PAGE_DIR_PHYISCAL_ADDR - PAGE_SIZE ;;第一个页表的起始位置
 .create_pte:
-  mov [edx], eax
-  add eax, PAGE_SIZE
-  add edx, 4
+  mov [edx], eax ;;第一个页表的起始位置保存1MB的第一页
+  add eax, PAGE_SIZE;;eax指向1MB的下一页
+  add edx, 4;;页表项往下
   loop .create_pte
 
   call enable_page
@@ -324,7 +329,7 @@ setup_page:
 ;  - arg 2: physical addr start (page aligned)
 ;  - arg 3: num of pages
 ;
-; caller must make sure the physical memory starting from arg2 is free to use
+; caller must make sure the physical memory starting from arg2 is free to use分配其他内核页表
 set_pages_mapping:
   push ebp
   mov ebp, esp
@@ -334,15 +339,15 @@ set_pages_mapping:
 
   mov esi, [ebp + 8]    ; virtual addr start
   mov edi, [ebp + 12]   ; physical addr start
-  mov ecx, [ebp + 16]   ; pages
+  mov ecx, [ebp + 16]   ; pages要分配的页大小
 
-  shr esi, 12  ; page table index
+  shr esi, 12  ; page table index虚拟地址的高20位即有1mB空间
   or edi, PG_US_U | PG_RW_W | PG_P
 .map_next_page:
   ; Note we use the VIRTUAL address of page tables, starting from 0xC0400000
-  mov [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], edi
-  add esi, 1
-  add edi, PAGE_SIZE
+  mov [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], edi;物理地址保存在对应的页表项
+  add esi, 1;;指向下一项
+  add edi, PAGE_SIZE;;edi指向物理下一页
   loop .map_next_page
 
   pop ebx
@@ -376,6 +381,7 @@ clear_pages_mapping:
   pop ebp
   ret
 
+;打开Paging
 enable_page:
   sgdt [gdt_ptr]
 
@@ -391,7 +397,7 @@ enable_page:
   add esp, 0xc0000000
   mov [esp], eax
 
-  ; set page directory address to cr3 register 
+  ; set page directory address to cr3 register 使cr3能够指向页目录
   mov eax, PAGE_DIR_PHYISCAL_ADDR
   mov cr3, eax
   
@@ -516,9 +522,10 @@ memcpy:
   pop ebp
   ret
 
+;从esp加8保存的位置将大小为ebp加12的内存区域置为0
 clear_memory:
-  push ebp
-  mov ebp, esp
+  push ebp ;保存old ebp
+  mov ebp, esp ;;ebp等于esp 
 
   mov eax, [ebp + 8]   ; start addr
   mov ecx, [ebp + 12]  ; size
