@@ -31,8 +31,8 @@ panic_message:
 
 ; gdt
 GDT_BASE:
-  dd 0x00000000
-  dd 0x00000000
+  dd 0x00000000;4字节
+  dd 0x00000000;4字节
 ;描述符表最开始的16字节全为0
 
 
@@ -43,7 +43,7 @@ CODE_DESC:
 DATA_DESC:
   dd DESC_DATA_LOW_32
   dd DESC_DATA_HIGH_32
-
+;这个地址为gdt_ptr加2加0x18
 VIDEO_DESC:
   dd DESC_VIDEO_LOW_32
   dd DESC_VIDEO_HIGH_32
@@ -309,7 +309,7 @@ setup_page:
   add eax, PAGE_SIZE ;;内核页表位置指向下一个页表
   add edx, 4 ;;edx指向页目录下一项
   loop .create_kernel_pde;;直到到达ecx
-
+;;以上是创建页目录，以下是构造页表
   ; create the first page table, for 1MB low memory第一个页表的前四分之一指向内存起始1MB
   mov eax, 0 ;指向的位置为0
   or eax, PG_US_U | PG_RW_W | PG_P
@@ -341,11 +341,11 @@ set_pages_mapping:
   mov edi, [ebp + 12]   ; physical addr start
   mov ecx, [ebp + 16]   ; pages要分配的页大小
 
-  shr esi, 12  ; page table index虚拟地址的高20位即有1mB空间
-  or edi, PG_US_U | PG_RW_W | PG_P
+  shr esi, 12  ; 有1024个页表，每个页表有1024项，所以指定页表要10位，指定页表项要10位，总共20位来指定是哪一个页表项，一个页表项保存一个地址，一个地址需要4个bits
+  or edi, PG_US_U | PG_RW_W | PG_P;页表项对应物理地址
 .map_next_page:
   ; Note we use the VIRTUAL address of page tables, starting from 0xC0400000
-  mov [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], edi;物理地址保存在对应的页表项
+  mov [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], edi;物理地址保存在对应的根据esi索引指定的页表项，而且一个地址要4Bits
   add esi, 1;;指向下一项
   add edi, PAGE_SIZE;;edi指向物理下一页
   loop .map_next_page
@@ -371,7 +371,7 @@ clear_pages_mapping:
   shr esi, 12  ; page table index
 .clear_next_page_map:
   ; Note we use the VIRTUAL address of page tables, starting from 0xC0400000
-  mov dword [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], 0
+  mov dword [PAGE_TABLES_VIRTUAL_ADDR_START + esi * 4], 0 ；dword就是4个字节
   add esi, 1
   add edi, PAGE_SIZE
   loop .clear_next_page_map
@@ -386,16 +386,16 @@ enable_page:
   sgdt [gdt_ptr]
 
   ; move the video segment to > 0xC0000000
-  mov ebx, [gdt_ptr + 2]
-  or dword [ebx + 0x18 + 4], 0xC0000000
+  mov ebx, [gdt_ptr + 2];;即ebx为gdt基地址
+  or dword [ebx + 0x18 + 4], 0xC0000000;相当于加上0xc0000000，因为之前在低位置，或上0xc0000000的低地址不变，高位变成c
 
   ; move gdt to > 0xC0000000
-  add dword [gdt_ptr + 2], 0xC0000000
+  add dword [gdt_ptr + 2], 0xC0000000;;将gdt_ptr加2作为地址的内存空间里的值也就是gdt基地址加上0xc0000000
 
   ; move stack to 0xC0000000
-  mov eax, [esp]
-  add esp, 0xc0000000
-  mov [esp], eax
+  mov eax, [esp];栈顶指针保存的值不一定是地址，这个数据不能变
+  add esp, 0xc0000000;;栈顶指针保存的地址加上0xc0000000
+  mov [esp], eax;放回
 
   ; set page directory address to cr3 register 使cr3能够指向页目录
   mov eax, PAGE_DIR_PHYISCAL_ADDR
@@ -436,12 +436,12 @@ init_kernel:
 allocate_pages_for_kernel:
   ; allocate pages to load kernel bin image
   mov ecx, KERNEL_BIN_MAX_SIZE
-  shr ecx, 12
+  shr ecx, 12 ;;右移12位，该值是bin包含多少个4kb的页
   push ecx  ; arg 3: num of pages to load kernel bin image
   push KERNEL_BIN_LOAD_PHYSICAL_ADDR  ; arg 2: physical addr
   push KERNEL_BIN_LOAD_VIRTUAL_ADDR   ; arg 1: virtual addr
   call set_pages_mapping
-  add esp, 12
+  add esp, 12;;跳过之前push的3个4字节
 
   ; allocate pages to place kernel sections
   mov ecx, KERNEL_SIZE_MAX

@@ -11,11 +11,11 @@ mbr_entry:
   jmp LOADER_BASE_ADDR
 
 init_segments:
-  mov ax, cs
-  mov ds, ax
-  mov es, ax
-  mov ss, ax
-  mov fs, ax
+  mov ax, cs ;代码段
+  mov ds, ax ;数据段
+  mov es, ax ；额外段
+  mov ss, ax ; 栈段
+  mov fs, ax ;堆段
 
   ; let's move stack to 0x7b00 :)
   ; we need to copy the current return address to new stack base

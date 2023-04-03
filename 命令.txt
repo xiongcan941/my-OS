@@ -1,0 +1,8 @@
+gcc -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -no-pie -fno-pic -c main.c -o main.o
+nasm -felf util.S -o util.o
+ ld -m elf_i386 -Tlink.ld -o kernel common.o io.o math.o util.o monitor.o main.o
+dd if=mbr of=myos.img bs=512 count=1 seek=0 conv=notrunc
+dd if=loader of=myos.img bs=512 count=8 seek=1 conv=notrunc
+dd if=kernel of=myos.img bs=512 count=2048 seek=9 conv=notrunc
+bochs -f bochsrc
+
